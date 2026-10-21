@@ -5,11 +5,77 @@
 A pure-NumPy audio codec with a multi-expert residual vector quantizer, per-frame variable-rate stage allocation, and a lossless escape layer — plus an optional PyTorch training stack and a codec benchmark harness.
 
 HarmoniaCodec encodes audio by transforming a signal into a latent frame sequence (STFT with random projection in the NumPy path, learned convolution stack in the neural path), quantizing that latent through nine stages of residual vector quantization where each stage selects from four expert codebooks via top-k routing, and reconstructing through a decoder that mirrors the encoder. A per-frame VRVQ router decides how many quantization stages each frame uses — more stages for high-energy frames, fewer for silence — and seven presets span the range from a 1024 kbps archival mode (which adds an LPC + Rice escape layer for bit-exact recovery of the original int16 waveform) down to a 0.20 kbps extreme mode. The repository ships the inference codec, the training stack, deterministic test-signal generation, and a benchmark harness that runs the same test audio through FLAC, ALAC, WavPack, MP3, AAC-LC, Vorbis, Opus, and optionally DAC and Encodec via real ffmpeg subprocess calls, reporting SNR, log-spectral distance, compression ratio, and wall-clock encode/decode time per codec. What does not ship is a trained model, a bitstream serialization format, or any measured quality metric against any competitor — those are the next milestones, and the README's "Known state and open items" section is explicit about which parts of the pipeline have been verified and which have not.
-## Quickstart
+## Quick Start
 
-pip install -e ".[dev]"
-make test-smoke   # or: scripts/run_smoke_gate.sh
-harmonia selftest
+Requires Python 3.9+.
+
+### 1. Install dependencies
+
+    pip install numpy scipy soundfile
+
+For the neural path, additionally:
+
+    pip install torch torchaudio
+
+For the benchmark harness (classical codecs), install `ffmpeg` and put it on PATH:
+
+    # Debian/Ubuntu
+    apt install ffmpeg
+    # macOS
+    brew install ffmpeg
+
+### 2. Verify the numpy codec
+
+    python harmonia.py selftest --expanded
+
+Expected output ends with `SELFTEST PASSED`. This exercises every mode, the
+lossless escape layer on both identity and non-identity reconstruction, HARP
+group partitioning, VRVQ mask monotonicity, and stereo handling — all against
+random weights, so it verifies correctness of the pipeline, not quality of
+the codec.
+
+### 3. Verify the test-signal generator
+
+    python harmonia_signalgen.py
+
+Expected output: `harmonia_signalgen: all checks passed`.
+
+### 4. Encode and decode a WAV
+
+    python harmonia.py encode input.wav output.harm --mode good
+    python harmonia.py decode output.harm roundtrip.wav
+
+Compare `input.wav` to `roundtrip.wav` in any audio editor. The SNR will be
+poor because the codec runs on random initialization — see "What is proven /
+not proven" above. The point of this step is that the round-trip executes
+without crashing and produces audio of the same length.
+
+### 5. Run the benchmark harness
+
+    python codec_probe_v31.py
+
+Produces `codec_report.json` and prints a table of measured SNR, log-spectral
+distance, compression ratio, and wall-clock encode/decode time for FLAC, ALAC,
+WavPack, MP3, AAC-LC, Vorbis, and Opus. Rows for codecs whose encoder is not
+available (EVS, DAC, Encodec) skip with an explicit reason rather than a
+fabricated number. The MP3 @ 128 kbps row should land near 11.8× compression
+on the default test signal.
+
+### 6. Neural stack (optional)
+
+    python harmonia_neural.py train --dry-run
+
+Runs 200 optimizer steps on a synthetic 440 Hz sine. This is a smoke test of
+the training pipeline, not a learning demonstration — see Known Issues #3 in
+the README. Do not proceed to a real training run until that issue is fixed.
+
+### 7. Streaming equivalence tests (optional, needs torch)
+
+    python test_streaming_equivalence.py
+    python test_causal_streaming.py
+
+The first runs correctly. The second passes but not for the reason it claims;
+see Known Issues #4 in the README.
 
 ## What is proven / not proven
 
