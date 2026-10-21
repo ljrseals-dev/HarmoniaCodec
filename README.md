@@ -2,8 +2,9 @@
 
 ![HarmoniaCodec Architecture](images/1792550189944.jpg)
 # HarmoniaCodec
-Production-grade audio codec with a pure-NumPy core and an optional neural (PyTorch) path.
+A pure-NumPy audio codec with a multi-expert residual vector quantizer, per-frame variable-rate stage allocation, and a lossless escape layer — plus an optional PyTorch training stack and a codec benchmark harness.
 
+Paragraph: HarmoniaCodec encodes audio by transforming a signal into a latent frame sequence (STFT with random projection in the NumPy path, learned convolution stack in the neural path), quantizing that latent through nine stages of residual vector quantization where each stage selects from four expert codebooks via top-k routing, and reconstructing through a decoder that mirrors the encoder. A per-frame VRVQ router decides how many quantization stages each frame uses — more stages for high-energy frames, fewer for silence — and seven presets span the range from a 1024 kbps archival mode (which adds an LPC + Rice escape layer for bit-exact recovery of the original int16 waveform) down to a 0.20 kbps extreme mode. The repository ships the inference codec, the training stack, deterministic test-signal generation, and a benchmark harness that runs the same test audio through FLAC, ALAC, WavPack, MP3, AAC-LC, Vorbis, Opus, and optionally DAC and Encodec via real ffmpeg subprocess calls, reporting SNR, log-spectral distance, compression ratio, and wall-clock encode/decode time per codec. What does not ship is a trained model, a bitstream serialization format, or any measured quality metric against any competitor — those are the next milestones, and the README's "Known state and open items" section is explicit about which parts of the pipeline have been verified and which have not.
 ## Quickstart
 
 pip install -e ".[dev]"
