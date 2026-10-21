@@ -1,6 +1,6 @@
 
 
-![HarmoniaCodec Architecture](images/1792548870880.jpg)
+![HarmoniaCodec Architecture](images/1792550189944.jpg)
 
 
 # HarmoniaCodec — verified files only
