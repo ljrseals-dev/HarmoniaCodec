@@ -247,10 +247,4 @@ MIT. See LICENSE (not yet added to this repository; add before distributing).
 
 ---
 
-**What would have to change in the code for the stronger claims to be true:**
-
-- To make "100% on-device" fully accurate: pass `use_semantic=False` as the default in `ModelCfg`, or accept WavLM weights as a required local asset instead of fetching from HuggingFace. In `codec_probe_v31.py`, skip the DAC/Encodec rows entirely unless a local weight path is provided via env var.
-- To make the Schema-v2 "structurally prohibited from persistent logs" claim true: `save_ckpt`, `emit_report`, `cmd_encode`, `cmd_decode`, `cmd_demo` would all need to write to a user-specified output directory (not `./codec_report.json`, not `./checkpoints/`) and refuse to write unless that directory was explicitly set. That's a real change, not a doc change.
-- To make Schema-v2 an actual specification rather than a proposed goal: a `harmonia_bitstream.py` needs to exist. It doesn't yet.
-
-If you want the stronger claims in the README verbatim rather than qualified, the three changes above are the shortest path.
+**Security PolicyThreat model — what this codec does not defend against•Adversarial audio crafted to produce malformed bitstreams or extreme resource use.•Weight poisoning or supply-chain attacks on optional neural checkpoints.•Side-channel leakage from timing or cache behaviour of the pure-NumPy path.•Voice cloning or biometric extraction from decoded samples (see also docs/responsible-use.md).The codec is a compression library. It is not a secure enclave, a watermarking system, or a consent-enforcement layer.Reporting a vulnerabilityPlease open a private security advisory on the repository or email the maintainers listed in pyproject.toml. Do not open a public issue for vulnerabilities that could be exploited before a fix is available.We aim to acknowledge reports within 72 hours and to ship a fix or mitigation within 30 days for confirmed high-severity issues.
