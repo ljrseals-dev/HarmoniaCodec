@@ -241,10 +241,10 @@ Three principles shape every file in this repository:
 
 License
 
-MIT. See LICENSE (not yet added to this repository; add before distributing).
+MIT. See LICENSE (Lewis James Seals Jr - ljrseals-dev).
 
 ```
 
 ---
 
-**Security PolicyThreat model — what this codec does not defend against•Adversarial audio crafted to produce malformed bitstreams or extreme resource use.•Weight poisoning or supply-chain attacks on optional neural checkpoints.•Side-channel leakage from timing or cache behaviour of the pure-NumPy path.•Voice cloning or biometric extraction from decoded samples (see also docs/responsible-use.md).The codec is a compression library. It is not a secure enclave, a watermarking system, or a consent-enforcement layer.Reporting a vulnerabilityPlease open a private security advisory on the repository or email the maintainers listed in pyproject.toml. Do not open a public issue for vulnerabilities that could be exploited before a fix is available.We aim to acknowledge reports within 72 hours and to ship a fix or mitigation within 30 days for confirmed high-severity issues.
+**Security Policy Threat model — what this codec does not defend against•Adversarial audio crafted to produce malformed bitstreams or extreme resource use.•Weight poisoning or supply-chain attacks on optional neural checkpoints.•Side-channel leakage from timing or cache behaviour of the pure-NumPy path.•Voice cloning or biometric extraction from decoded samples (see also docs/responsible-use.md).The codec is a compression library. It is not a secure enclave, a watermarking system, or a consent-enforcement layer.Reporting a vulnerabilityPlease open a private security advisory on the repository or email the maintainers listed in pyproject.toml. Do not open a public issue for vulnerabilities that could be exploited before a fix is available.We aim to acknowledge reports within 72 hours and to ship a fix or mitigation within 30 days for confirmed high-severity issues.
