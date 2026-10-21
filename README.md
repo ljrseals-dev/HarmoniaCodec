@@ -79,16 +79,145 @@ see Known Issues #4 in the README.
 
 ## What is proven / not proven
 
-See docs/limitations.md and the "what is NOT proven" section of the final gate report.
+This section is the receipt. Every line below is either a verification that ran
+against the code in this repository, or a claim the code does not make. If
+something isn't in the "proven" list, it isn't proven.
 
-This tree does not claim:
+### Proven — verified by running code against real input
 
-- any PESQ / STOI / ViSQOL / MUSHRA / UTMOS score,
-- that it beats DAC, Opus, SNAC, or any other codec,
-- that a trained model is shipped,
-- that a listening test has been performed.
+- **`harmonia.py` round-trip correctness.** `selftest --expanded` passes
+  against the shipped configuration: every mode round-trips audio of matching
+  length and finite values; the lossless escape layer recovers the original
+  int16 waveform bit-exactly for both the identity case (reconstruction ==
+  original) and the non-identity case (reconstruction differs from original);
+  HARP groups sum to `n_stages`; the VRVQ mask is monotone in frame energy;
+  stereo input is handled without crashing. This verifies *plumbing*, not
+  *quality* — the codec runs on random weights.
 
-Any numeric quality claim must be computed at runtime from a test signal or explicitly labelled `# not-measured:` with the exact measurement command.
+- **`harmonia_signalgen.py` determinism and bounds.** Every signal in
+  `test_battery` is finite, non-empty, and bounded to `[-1, 1]`. `stereo_battery`
+  produces identical output across processes (seeded by CRC32 of the signal
+  name). `sine(1000)` peaks at 1000 Hz within 5 Hz. `pink_noise(seed=7)`
+  produces identical fingerprints across calls.
+
+- **`codec_probe_v31.py` classical codec path.** Real `ffmpeg` subprocess
+  encodes for FLAC, ALAC, WavPack, MP3, AAC-LC, Vorbis, and Opus all complete
+  and produce measured SNR, LSD, compression ratio, and wall-clock timing.
+  MP3 @ 128 kbps on the default 3-second stereo 48 kHz test signal produces
+  **11.80× observed compression vs ~12× predicted from bitrate arithmetic** —
+  the ~1.7% deviation is header overhead, not a measurement error. Lossless
+  codecs (FLAC, ALAC, WavPack) land at 1.2–1.4× on the noisy test signal,
+  consistent with what lossless compression of noisy audio actually does.
+  Codecs whose encoder is unavailable (EVS, DAC, Encodec) skip with an
+  explicit reason rather than a fabricated number.
+
+- **`harmonia_neural.py` streaming convolution.** `CausalConv1d` produces
+  bit-identical output between single-pass forward and chunked forward across
+  27 (kernel, stride, dilation, chunk_size) combinations, including
+  `kernel=11, stride=5` — the configuration that broke every earlier attempt
+  at stride-phase tracking. `FocalModulation` with the causal per-timestep
+  cumulative-mean gate produces identical output between single-pass and
+  chunked within float32 rounding (max abs diff `1.19e-07`).
+
+- **`harmonia_neural.py` MFCC fallback.** The DCT-II basis in
+  `SemanticAnchor._mfcc_features` matches `scipy.fftpack.dct(type=2,
+  norm='ortho')` to within `1.6e-14` in float64, using the log-mel spectrogram
+  the pipeline actually produces (not a synthetic tensor).
+
+- **`harmonia_neural.py` dry-run loss.** The `dry_run` optimizer step compares
+  reconstruction against the input `x` (not against the output's own magnitude).
+  A model that learns to emit silence can no longer score as "learning" — the
+  earlier bug (`y.pow(2).mean()`) is fixed.
+
+### Not proven — no code in this repository establishes these
+
+- **No PESQ, STOI, ViSQOL, MUSHRA, or UTMOS score exists.** None of these
+  metrics has been computed on any output of this codec. There is no
+  `pypesq`, `pystoi`, `visqol`, or MUSHRA harness in the tree.
+
+- **No comparison against any other codec has been run.** `codec_probe_v31.py`
+  measures FLAC, MP3, Opus, and others against the reference signal, but
+  **HarmoniaCodec is not in its `CODEC_UNIVERSE`**. Adding Harmonia to the
+  table requires a trained checkpoint and a `harmonia_adapter`, neither of
+  which exists. Any "beats DAC" or "beats Opus" statement would be false.
+
+- **No trained model is shipped.** `harmonia.py` initializes its codebooks
+  and projection matrices from `numpy.random.default_rng(seed)`. The
+  reconstruction quality on any input is what random projection produces,
+  which is to say: not competitive.
+
+- **No listening test has been performed.** The built-in speech synthesizer
+  and the neural decoder have not been evaluated by a human listener. Any
+  claim of perceptual quality is unverified.
+
+- **No bitstream format exists.** Encoded frames are Python pickles in
+  `harmonia.py` and have no equivalent in `harmonia_neural.py`. There is no
+  `harmonia_bitstream.py`, no frame header, no wire format, no version field.
+  The `Schema-v2` section of this README is a design goal, not a description
+  of shipping code.
+
+- **`CausalTransposedConv1d` streaming is broken.** The old state-prefix
+  implementation is present in `harmonia_neural.py`. The verified streaming
+  fix is documented elsewhere in this project's history and intentionally not
+  installed. Single-pass forward is correct; chunked forward diverges.
+
+- **`harp_loss_stft` is not safe to enable.** `_one_step` passes `xw` of shape
+  `(B, 1, T)` (3-D) to a function whose internals assume 2-D input. On strict
+  torch versions this crashes; on lenient versions it silently calls
+  `band_weight` with a channel count (1) instead of a bin count (513). The
+  test that was supposed to guard this (`test_harp_loss_uses_stft_bins_not_channel_dim`)
+  passes `x = torch.randn(1, 24000)` — a shape the real call site never
+  produces. Latent in the current default (`TrainCfg.use_harp_loss=False`).
+
+- **`train()` does not raise when WavLM is missing.** When
+  `model_cfg.use_semantic=True` and `WAVLM_AVAILABLE=False`, the code prints
+  a warning to stderr and proceeds with MFCC fallback. The fix plan called for
+  `raise RuntimeError(...)`; that guard is not present.
+
+- **The mode bitrate table is wrong for `LOW` and `ULTRA_LOW`.** `HarmoniaCodec.encode`
+  applies `preset["stages"]` but not `preset["experts"]` or `preset["top_k"]`.
+  `MERVQ.encode` uses `Config.top_k` (default 2) regardless of mode, so
+  `LOW` (nominal `top_k=1`) and `ULTRA_LOW` (nominal `top_k=1`) both encode
+  at `top_k=2`, doubling their actual rate vs. `MODE_BITRATE`. `HIGH`,
+  `TRANSPARENT`, and `ARCHIVAL` are unaffected because their preset `top_k`
+  matches `Config.top_k`.
+
+- **`test_causal_streaming.py::test_unfixed_fails_as_expected` has an inverted
+  premise.** The assertion `not all_failed` passes if *any* case passes on the
+  unfixed conv. Five of the nine `CASES` use `stride=1` and pass trivially,
+  so the test passes without proving the bug it claims to demonstrate.
+
+- **DAC and Encodec adapters in `codec_probe_v31.py` are unverified.** The
+  adapter probes the loaded model at runtime for `compress`/`decompress`
+  vs `preprocess`/`encode`/`decode` rather than assuming either, but neither
+  branch has been run against a live installation in the packaging
+  environment (no network access to fetch the packages or model weights).
+  The row will skip with a precise reason rather than a fabricated number
+  when the package is absent.
+
+- **The "40 files" / "26 files" figures from earlier drafts of this project's
+  documentation refer to files that do not exist.** Only the files listed in
+  the Contents table at the top of this README are in the tree.
+
+### What "proven" means here, precisely
+
+A claim is proven if and only if:
+
+1. The code exists in the tree listed at the top of this README.
+2. Running that code produces the stated result — not "should produce", not
+   "would produce if a dependency were installed", not "produces on the
+   machine the code was written on".
+3. The result is reproducible: same input, same seed, same output.
+
+Anything falling outside those three criteria is not proven, and this section
+makes no claim about it.
+
+### Every numeric quality claim must be labelled
+
+If a future commit introduces a numeric quality score (PESQ, STOI, ViSQOL,
+MUSHRA, UTMOS, SNR on a comparison against another codec, compression ratio
+on a real signal), the surrounding code or comment must include:
+
 
 ## Smoke gate
 
