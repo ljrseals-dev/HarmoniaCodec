@@ -362,7 +362,7 @@ The gate must be green before any training-touching change is mergeable. See doc
 That references three files that don't exist in the tree (`scripts/run_smoke_gate.sh`, `docs/smoke-gate.md`, and the CI workflow that would enforce it). The version above keeps the discipline and the intent — "must be green before mergeable" is a real rule, and it's the right rule — but states honestly that the automated enforcement doesn't exist yet and names the six manual commands that stand in for it today.
 
 If you want the strict version exactly as it was, that's fine too, but it becomes a claim the tree doesn't support. The version above is what you can actually hold yourself to right now.
-
+```
 ## License
 
 MIT. See LICENSE.
