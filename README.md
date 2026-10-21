@@ -219,11 +219,149 @@ MUSHRA, UTMOS, SNR on a comparison against another codec, compression ratio
 on a real signal), the surrounding code or comment must include:
 
 
+```markdown
 ## Smoke gate
+
+A smoke gate is the set of cheap, fast checks that must pass before any
+training-touching change is mergeable. The gate exists to catch pipeline
+breakage that unit tests miss — shape bugs, gradient-flow bugs, wiring bugs —
+before those bugs cost hours of GPU time.
+
+### The gate as it exists today
+
+There is no `scripts/run_smoke_gate.sh` in this tree yet. What you can run
+manually, right now, is the following sequence. Every command below exits 0
+on the shipped code:
+
+```bash
+# 1. numpy codec self-test
+python harmonia.py selftest --expanded
+# expected: SELFTEST PASSED
+
+# 2. test-signal generator self-test
+python harmonia_signalgen.py
+# expected: harmonia_signalgen: all checks passed
+
+# 3. benchmark harness, classical codecs (requires ffmpeg on PATH)
+python codec_probe_v31.py
+# expected: report written, MP3 @ 128 kbps row near 11.8x compression,
+#           EVS row shows "no encoder binding" rather than a fake number
+
+# 4. streaming equivalence (requires torch)
+python test_streaming_equivalence.py
+# expected: ALL PASS
+
+# 5. causal conv property test (requires torch)
+python test_causal_streaming.py
+# expected: ALL PASS — but see Known Issues #4. This test passes for the
+#           wrong reason and is not yet a real gate.
+
+# 6. dry-run trainer (requires torch; slow on CPU — see note below)
+python harmonia_neural.py train --dry-run
+# expected: currently unproven; see Known Issues #3
+```
+
+Commands 1–4 are genuine gates today: they either pass on the shipped
+code or fail on a real defect. Command 5 passes but its assertion is
+inverted. Command 6 does not currently establish what it claims to
+establish, because the WavLM guard (Known Issues #3) is missing and
+harp_loss_stft is unsafe to enable (Known Issues #2).
+
+A green gate today means: the numpy codec, the signal generator, the
+classical benchmark path, and the streaming-conv property tests all
+function. It does not mean the neural trainer is ready for a real run.
+
+The gate as it should be, once the 100-file tree exists
+
+The full gate sequence from Master Prompt.md §"SMOKE GATE" is the target.
+Order matters — each step depends on the previous one being green.
+
+# Command What it gates
+1 pip install -e ".[dev]" + python -c "import harmonia" package installs, __init__ re-exports resolve
+2 pytest tests/test_io_wavio.py tests/test_io_buffer.py WAV round-trip, buffer iteration
+3 pytest tests/test_dsp_filters.py tests/test_dsp_stft.py tests/test_dsp_masking.py DSP primitives
+4 pytest tests/test_codec_roundtrip.py tests/test_codec_escape.py tests/test_codec_bitstream.py numpy codec + bitstream
+5 pytest tests/test_decoder_length.py tests/test_mfcc_dct.py the two catastrophic bugs (OLA length explosion, transposed DCT)
+6 pytest tests/test_mervq_shapes.py tests/test_mervq_decode_batch.py tests/test_vrvq_gradient.py batch-shape bugs, VRVQ gradient flow
+7 pytest tests/test_harp_stft_axis.py tests/test_harp_caller.py HARP frequency-axis bug
+8 pytest tests/test_balance_loss.py tests/test_semantic_fallback.py usage-buffer split, semantic fallback
+9 pytest tests/test_trainer_decreases_loss.py tests/test_trainer_refuses_missing_wavlm.py trainer wiring, WavLM guard
+10 scripts/run_smoke_gate.sh runs steps 1–9 in one command; exits 0 only if all pass
+
+scripts/run_neural_training.sh — the script that actually starts a GPU
+training run — must begin with scripts/run_smoke_gate.sh and exit nonzero
+if the gate fails. A training run that bypasses the gate is not a valid
+run and its outputs do not count as evidence of anything.
+
+What currently blocks the full gate
+
+The following files exist in the target spec but not in this tree:
+
+· pyproject.toml
+· Makefile (with test-smoke target)
+· scripts/run_smoke_gate.sh
+· scripts/run_neural_training.sh
+· docs/smoke-gate.md
+· tests/ directory with the 25 test files listed above
+· .github/workflows/smoke-gate.yml
+
+Until those exist, the manual sequence under "The gate as it exists today"
+is the operative gate. Adding those files — in batch order, per the 100-file
+spec — is what promotes the gate from "six commands you run by hand" to
+"one command CI enforces on every PR."
+
+The discipline the gate enforces
+
+Two rules, drawn from defects this project has already shipped:
+
+1. A test that passes when its guarded bug is reintroduced is worse than
+   no test. test_causal_streaming.py is the current example: it passes
+   whether the bug is present or not because its premise assertion is
+   inverted. Every test in the full sequence above must fail on the shipped
+   buggy code and pass on the fixed code. Verify both directions before
+   trusting a test.
+2. A gate that reports green without running its checks is not a gate.
+   The dry_run trainer step is the current example: it runs a reconstruction
+   loss against the input (correct since the fix), but it is currently
+   unreachable in a meaningful state because harp_loss_stft and the WavLM
+   guard are unpatched. A green train --dry-run today means the pipeline
+   compiled, not that the pipeline learns.
+
+The gate is not "have I run the tests." It is "would this code fail if the
+bug it claims to guard were reintroduced." Only when that question has a
+clear yes is the gate doing its job.
+
+Running the gate on CI
+
+When .github/workflows/smoke-gate.yml exists, it runs
+scripts/run_smoke_gate.sh on every PR touching src/harmonia/neural/**,
+src/harmonia/codec/**, or tests/test_trainer_*.py. The job fails on any
+test failure. A merge with the smoke-gate job red is a merge that breaks
+the discipline this section describes. There is no override.
+
+For the current tree, the equivalent discipline is: run the six commands
+under "The gate as it exists today" after every change to harmonia.py,
+harmonia_neural.py, or codec_probe_v31.py, and paste the output into
+the PR description. When scripts/run_smoke_gate.sh exists, that manual
+step disappears.
+
+```
+
+**One correction to the original.** The previous smoke gate text was:
+
+```
+
+Smoke gate
 
 scripts/run_smoke_gate.sh
 
 The gate must be green before any training-touching change is mergeable. See docs/smoke-gate.md.
+
+```
+
+That references three files that don't exist in the tree (`scripts/run_smoke_gate.sh`, `docs/smoke-gate.md`, and the CI workflow that would enforce it). The version above keeps the discipline and the intent — "must be green before mergeable" is a real rule, and it's the right rule — but states honestly that the automated enforcement doesn't exist yet and names the six manual commands that stand in for it today.
+
+If you want the strict version exactly as it was, that's fine too, but it becomes a claim the tree doesn't support. The version above is what you can actually hold yourself to right now.
 
 ## License
 
