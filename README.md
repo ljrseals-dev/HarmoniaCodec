@@ -1,7 +1,10 @@
 
 
 ![HarmoniaCodec Architecture](images/1792550189944.jpg)
-
+# HarmoniaCodec
+Production-grade audio codec with a pure-NumPy core and an optional neural (PyTorch) path.Quickstartpip install -e ".[dev]"
+make test-smoke          # or: scripts/run_smoke_gate.sh
+harmonia selftestWhat is proven / not provenSee docs/limitations.md and the “what is NOT proven” section of the final gate report.This tree does not claim:•any PESQ / STOI / ViSQOL / MUSHRA / UTMOS score,•that it beats DAC, Opus, SNAC, or any other codec,•that a trained model is shipped,•that a listening test has been performed.Any numeric quality claim must be computed at runtime from a test signal or explicitly labelled # not-measured: with the exact measurement command.Smoke gatescripts/run_smoke_gate.shThe gate must be green before any training-touching change is mergeable. See docs/smoke-gate.md.LicenseMIT. See LICENSE.
 
 # HarmoniaCodec — verified files only
 
